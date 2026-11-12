@@ -34,127 +34,158 @@ function pickSecureIndex(length) {
   return value[0] % length
 }
 
-function maskPhone(number) {
-  const digits = number.replace(/\D/g, "")
-  return `••• ••• ••• ${digits.slice(-4)}`
-}
-
-function Reel({ entries, selectedIndex, isSpinning }) {
-  const getEntry = (offset) => entries.length ? entries[(selectedIndex + offset + entries.length) % entries.length] : null
-
-  return (
-    <div className={`reel-window${isSpinning ? " is-spinning" : ""}`} aria-live="off" aria-label={isSpinning ? "Phone numbers are rotating" : "Selected phone number"}>
-      <div className="reel-row reel-row--side">{getEntry(-1) ? maskPhone(getEntry(-1).number) : "••• ••• ••• •••"}</div>
-      <div className="reel-row reel-row--active" key={`${selectedIndex}-${isSpinning}`}>
-        {getEntry(0) ? maskPhone(getEntry(0).number) : "••• ••• ••• •••"}
-      </div>
-      <div className="reel-row reel-row--side">{getEntry(1) ? maskPhone(getEntry(1).number) : "••• ••• ••• •••"}</div>
-    </div>
-  )
-}
-
 export default function RaffleDraw() {
   const [list, setList] = useState(sampleEntries.join("\n"))
-  const [selectedIndex, setSelectedIndex] = useState(0)
+  const [displayDigits, setDisplayDigits] = useState([])
+  const [lockedReels, setLockedReels] = useState(0)
   const [isSpinning, setIsSpinning] = useState(false)
   const [winner, setWinner] = useState(null)
-  const [isWinnerRevealed, setIsWinnerRevealed] = useState(false)
-  const [drawCount, setDrawCount] = useState(0)
   const intervalRef = useRef(null)
-  const timeoutRef = useRef(null)
+  const stopTimersRef = useRef([])
+  const lockedReelsRef = useRef(0)
+  const dialogRef = useRef(null)
   const entries = parseEntries(list)
+  const reelCount = Math.max(1, ...entries.map(({ digits }) => digits.length))
+  const visibleDigits = isSpinning || winner
+    ? displayDigits
+    : Array.from({ length: reelCount }, () => "0")
 
   useEffect(() => () => {
     window.clearInterval(intervalRef.current)
-    window.clearTimeout(timeoutRef.current)
+    stopTimersRef.current.forEach(window.clearTimeout)
   }, [])
 
   function handleListChange(event) {
     setList(event.target.value)
     setWinner(null)
-    setIsWinnerRevealed(false)
-    setSelectedIndex(0)
+    setDisplayDigits([])
   }
 
   function beginDraw() {
     if (isSpinning || entries.length === 0) return
 
-    const winningIndex = pickSecureIndex(entries.length)
+    const selectedWinner = entries[pickSecureIndex(entries.length)]
+    const targetDigits = selectedWinner.digits.padStart(reelCount, " ").split("")
+    lockedReelsRef.current = 0
+    setLockedReels(0)
     setWinner(null)
-    setIsWinnerRevealed(false)
+    setDisplayDigits(Array.from({ length: reelCount }, () => String(Math.floor(Math.random() * 10))))
     setIsSpinning(true)
-    setDrawCount((count) => count + 1)
 
     intervalRef.current = window.setInterval(() => {
-      setSelectedIndex((index) => (index + 1 + Math.floor(Math.random() * Math.max(entries.length - 1, 1))) % entries.length)
-    }, 85)
+      setDisplayDigits((current) => current.map((digit, index) => (
+        index < lockedReelsRef.current ? digit : String(Math.floor(Math.random() * 10))
+      )))
+    }, 72)
 
-    timeoutRef.current = window.setTimeout(() => {
-      window.clearInterval(intervalRef.current)
-      setSelectedIndex(winningIndex)
-      setWinner(entries[winningIndex])
-      setIsSpinning(false)
-    }, 3500)
+    stopTimersRef.current = targetDigits.map((target, index) => window.setTimeout(() => {
+      lockedReelsRef.current = index + 1
+      setLockedReels(index + 1)
+      setDisplayDigits((current) => current.map((digit, reelIndex) => (
+        reelIndex === index ? target : digit
+      )))
+
+      if (index === targetDigits.length - 1) {
+        window.clearInterval(intervalRef.current)
+        setWinner(selectedWinner)
+        setIsSpinning(false)
+      }
+    }, 1100 + index * 175))
+  }
+
+  function openEntryList() {
+    dialogRef.current?.showModal()
+  }
+
+  function closeEntryList() {
+    dialogRef.current?.close()
   }
 
   return (
     <main className="draw-app">
-      <header className="topbar">
-        <a className="brand" href="#top" aria-label="RafflePro home"><span className="brand-mark">R</span><span>rafflepro</span></a>
-        <div className="fairness-pill"><span className="fairness-dot" /> RANDOMIZED DRAW</div>
-      </header>
-
-      <section className="draw-layout" id="top" aria-labelledby="draw-title">
-        <div className="draw-intro">
-          <p className="eyebrow"><span className="eyebrow-line" /> THE MOMENT OF THE DRAW</p>
-          <h1 id="draw-title">One name.<br />A little <em>luck.</em></h1>
-          <p className="intro-copy">Load your entries, take a breath, and let the reels decide who takes it home.</p>
-          <div className="draw-stats" aria-label="Draw information">
-            <div><span className="stat-label">ELIGIBLE ENTRIES</span><strong>{entries.length.toString().padStart(2, "0")}</strong></div>
-            <span className="stat-divider" />
-            <div><span className="stat-label">DRAWS THIS SESSION</span><strong>{drawCount.toString().padStart(2, "0")}</strong></div>
-          </div>
+      <section className="machine-card" aria-label="Phone number raffle slot machine">
+        <div className="machine-lights" aria-hidden="true">
+          {Array.from({ length: 11 }, (_, index) => <span key={index} />)}
         </div>
+        <div
+          className={`digit-reels${isSpinning ? " is-spinning" : ""}`}
+          style={{ "--slot-count": reelCount }}
+          role="group"
+          aria-label="Phone number digit reels"
+          aria-live="off"
+        >
+          {Array.from({ length: reelCount }, (_, index) => {
+            const digit = visibleDigits[index] ?? "0"
+            const isLocked = isSpinning && index < lockedReels
 
-        <section className="machine-card" aria-label="Raffle number draw machine">
-          <div className="machine-lights" aria-hidden="true">{Array.from({ length: 7 }, (_, index) => <span key={index} />)}</div>
-          <div className="machine-heading"><span>RAFFLE DRAW</span><span className="machine-id">RP — 001</span></div>
-          <div className="machine-display">
-            <div className="display-topline"><span>{isSpinning ? "DRAW IN PROGRESS" : winner ? "WINNING ENTRY" : "YOUR LUCKY NUMBER"}</span><span className={`display-indicator${isSpinning ? " is-active" : ""}`} aria-hidden="true" /></div>
-            <Reel entries={entries} selectedIndex={selectedIndex} isSpinning={isSpinning} />
-            <div className="display-caption">{isSpinning ? "THE REELS ARE TURNING" : winner ? "WE HAVE A WINNER" : "READY WHEN YOU ARE"}</div>
-          </div>
-          <button className={`draw-button${isSpinning ? " is-spinning" : ""}`} onClick={beginDraw} disabled={isSpinning || entries.length === 0}>
-            <span className="button-icon" aria-hidden="true">{isSpinning ? "Ⅱ" : "▶"}</span>
-            <span>{isSpinning ? "DRAWING…" : winner ? "DRAW AGAIN" : "START THE DRAW"}</span>
-            {!isSpinning && <span className="button-arrow" aria-hidden="true">↗</span>}
+            return (
+              <div
+                className={`digit-reel${isSpinning && !isLocked ? " is-rolling" : ""}${digit.trim() ? "" : " is-empty"}`}
+                key={index}
+                aria-hidden="true"
+              >
+                <span className="digit-value">{digit}</span>
+              </div>
+            )
+          })}
+        </div>
+        <div className="machine-controls">
+          <button
+            className={`spin-button${isSpinning ? " is-spinning" : ""}`}
+            onClick={beginDraw}
+            disabled={isSpinning || entries.length === 0}
+            aria-label={isSpinning ? "Drawing a winner" : "Spin to choose a winner"}
+          >
+            <span className="spin-button-ring"><span className="spin-button-core" /></span>
+            <span>SPIN</span>
           </button>
-          <button className={`machine-lever${isSpinning ? " is-pulled" : ""}`} onClick={beginDraw} disabled={isSpinning || entries.length === 0} aria-label="Pull the lever to start the draw"><span className="machine-lever-rod" /><span className="machine-lever-ball" /></button>
-          <p className="machine-footnote">Each valid entry has an equal chance of being selected.</p>
-          {winner && !isSpinning && (
-            <div className="winner-result" role="status" aria-live="polite">
-              <span className="winner-kicker">CONGRATULATIONS</span>
-              <strong>{isWinnerRevealed ? winner.number : maskPhone(winner.number)}</strong>
-              <button className="reveal-button" onClick={() => setIsWinnerRevealed((revealed) => !revealed)}>
-                {isWinnerRevealed ? "Hide full number" : "Reveal full number"}
-              </button>
-            </div>
-          )}
-        </section>
-
-        <section className="entries-card" aria-labelledby="entries-title">
-          <div className="entries-heading">
-            <div><p className="eyebrow">THE GUEST LIST</p><h2 id="entries-title">Your entries<span className="entries-count">{entries.length}</span></h2></div>
-            <span className="lock-mark" aria-label="Phone numbers are masked in the draw">•••</span>
-          </div>
-          <label className="sr-only" htmlFor="phone-entries">Phone number entries, one per line</label>
-          <textarea id="phone-entries" className="entries-input" value={list} onChange={handleListChange} disabled={isSpinning} spellCheck="false" aria-describedby="entries-help" />
-          <div className="entries-footer"><p id="entries-help">One phone number per line. Invalid entries are skipped.</p><span>{entries.length} VALID</span></div>
-          <p className="privacy-note">Numbers stay in this page and are masked until you choose to reveal the winner.</p>
-        </section>
+        </div>
+        <button
+          className={`machine-lever${isSpinning ? " is-pulled" : ""}`}
+          onClick={beginDraw}
+          disabled={isSpinning || entries.length === 0}
+          aria-label="Pull the lever to start the draw"
+        >
+          <span className="machine-lever-rod" />
+          <span className="machine-lever-ball" />
+        </button>
+        <button
+          className="entry-list-toggle"
+          onClick={openEntryList}
+          disabled={isSpinning}
+          aria-label={`Edit phone number list, ${entries.length} valid entries`}
+          title="Edit phone number list"
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M8 6h12M8 12h12M8 18h12M3.5 6h.01M3.5 12h.01M3.5 18h.01" />
+          </svg>
+        </button>
+        <p className="sr-only" role="status" aria-live="polite">
+          {winner ? `Winning phone number: ${winner.number}` : ""}
+        </p>
       </section>
 
-      <footer className="draw-footer"><span>RAFFLEPRO <span aria-hidden="true">/</span> MAKE GOOD THINGS HAPPEN</span><span>RANDOMLY SELECTED. FAIRLY CELEBRATED.</span></footer>
+      <dialog className="entries-dialog" ref={dialogRef} aria-labelledby="entries-title">
+        <form method="dialog" className="entries-dialog-content">
+          <div className="entries-dialog-heading">
+            <h2 id="entries-title">Phone number list</h2>
+            <button className="entries-close" type="button" onClick={closeEntryList} aria-label="Close phone number list">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" /></svg>
+            </button>
+          </div>
+          <label className="sr-only" htmlFor="phone-entries">Phone numbers, one per line</label>
+          <textarea
+            id="phone-entries"
+            className="entries-input"
+            value={list}
+            onChange={handleListChange}
+            spellCheck="false"
+            aria-describedby="entries-help"
+          />
+          <p id="entries-help" className="entries-help">One phone number per line. Invalid entries are skipped.</p>
+          <button className="entries-done" type="button" onClick={closeEntryList}>DONE</button>
+        </form>
+      </dialog>
     </main>
   )
 }
