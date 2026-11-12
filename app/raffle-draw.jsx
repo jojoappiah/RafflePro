@@ -3,23 +3,29 @@
 import { useEffect, useRef, useState } from "react"
 
 const sampleEntries = [
-  "+1 (202) 555-0101",
-  "+1 (202) 555-0102",
-  "+1 (202) 555-0103",
-  "+1 (202) 555-0104",
-  "+1 (202) 555-0105",
-  "+1 (202) 555-0106",
-  "+1 (202) 555-0107",
-  "+1 (202) 555-0108",
+  "024 000 0001",
+  "024 000 0002",
+  "024 000 0003",
+  "024 000 0004",
+  "024 000 0005",
+  "024 000 0006",
+  "024 000 0007",
+  "024 000 0008",
 ]
+
+function normalizeGhanaNumber(number) {
+  const digits = number.replace(/\D/g, "")
+  return digits.startsWith("233") ? `0${digits.slice(3)}` : digits
+}
 
 function parseEntries(value) {
   return value
     .split(/[\n,;]+/)
     .map((number) => number.trim())
     .filter(Boolean)
-    .map((number) => ({ number, digits: number.replace(/\D/g, "") }))
-    .filter(({ number, digits }) => /^[+\d\s().-]+$/.test(number) && digits.length >= 7 && digits.length <= 15)
+    .map((number) => ({ source: number, digits: normalizeGhanaNumber(number) }))
+    .filter(({ source, digits }) => /^[+\d\s().-]+$/.test(source) && /^0\d{9}$/.test(digits))
+    .map(({ digits }) => ({ number: digits, digits }))
 }
 
 function pickSecureIndex(length) {
@@ -182,7 +188,7 @@ export default function RaffleDraw() {
             spellCheck="false"
             aria-describedby="entries-help"
           />
-          <p id="entries-help" className="entries-help">One phone number per line. Invalid entries are skipped.</p>
+          <p id="entries-help" className="entries-help">Use 10 digits starting with 0. A +233 prefix is converted to 0.</p>
           <button className="entries-done" type="button" onClick={closeEntryList}>DONE</button>
         </form>
       </dialog>
