@@ -1,12 +1,12 @@
 import "./globals.css"
 
 export const metadata = {
-  title: "RafflePro — Make good things happen",
-  description: "Bring people together around something worth winning. Create fair, simple, memorable raffles with RafflePro.",
+  title: "RafflePro — The Lucky Draw",
+  description: "Run a simple, fair phone-number raffle draw with RafflePro. Add entries, spin the reels, and celebrate your winner.",
 }
 
 export const viewport = {
-  themeColor: "#f5f3eb",
+  themeColor: "#101713",
   width: "device-width",
   initialScale: 1,
 }
