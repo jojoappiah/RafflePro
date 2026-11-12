@@ -117,6 +117,7 @@ export default function RaffleDraw() {
         </div>
 
         <section className="machine-card" aria-label="Raffle number draw machine">
+          <div className="machine-lights" aria-hidden="true">{Array.from({ length: 7 }, (_, index) => <span key={index} />)}</div>
           <div className="machine-heading"><span>RAFFLE DRAW</span><span className="machine-id">RP — 001</span></div>
           <div className="machine-display">
             <div className="display-topline"><span>{isSpinning ? "DRAW IN PROGRESS" : winner ? "WINNING ENTRY" : "YOUR LUCKY NUMBER"}</span><span className={`display-indicator${isSpinning ? " is-active" : ""}`} aria-hidden="true" /></div>
@@ -128,6 +129,7 @@ export default function RaffleDraw() {
             <span>{isSpinning ? "DRAWING…" : winner ? "DRAW AGAIN" : "START THE DRAW"}</span>
             {!isSpinning && <span className="button-arrow" aria-hidden="true">↗</span>}
           </button>
+          <button className={`machine-lever${isSpinning ? " is-pulled" : ""}`} onClick={beginDraw} disabled={isSpinning || entries.length === 0} aria-label="Pull the lever to start the draw"><span className="machine-lever-rod" /><span className="machine-lever-ball" /></button>
           <p className="machine-footnote">Each valid entry has an equal chance of being selected.</p>
           {winner && !isSpinning && (
             <div className="winner-result" role="status" aria-live="polite">
