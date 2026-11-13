@@ -124,6 +124,7 @@ button, textarea { font: inherit; }
 .digit-value { position: relative; z-index: 2; }
 .digit-reel.is-empty .digit-value { opacity: 0; }
 .digit-reel.is-rolling .digit-value { animation: digit-roll .14s linear infinite alternate; }
+.digit-reel.is-rolling.is-slow .digit-value { animation-duration: .42s; }
 @keyframes digit-roll {
   from { transform: translateY(-4px); filter: blur(.5px); }
   to { transform: translateY(4px); filter: blur(1.7px); }

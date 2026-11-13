@@ -2,6 +2,12 @@
 
 import { useEffect, useRef, useState } from "react"
 
+const ROLL_START_DELAY = 1100
+const REGULAR_REEL_SPIN_INTERVAL = 72
+const SLOW_REEL_SPIN_INTERVAL = 240
+const REGULAR_REEL_STOP_INTERVAL = 175
+const SLOW_REEL_STOP_INTERVAL = 480
+
 const sampleEntries = [
   "024 000 0001",
   "024 000 0002",
@@ -49,9 +55,11 @@ export default function RaffleDraw() {
   const intervalRef = useRef(null)
   const stopTimersRef = useRef([])
   const lockedReelsRef = useRef(0)
+  const reelNextTickRef = useRef([])
   const dialogRef = useRef(null)
   const entries = parseEntries(list)
   const reelCount = Math.max(1, ...entries.map(({ digits }) => digits.length))
+  const slowReelStart = Math.max(0, reelCount - 4)
   const visibleDigits = isSpinning || winner
     ? displayDigits
     : Array.from({ length: reelCount }, () => "0")
@@ -78,11 +86,18 @@ export default function RaffleDraw() {
     setDisplayDigits(Array.from({ length: reelCount }, () => String(Math.floor(Math.random() * 10))))
     setIsSpinning(true)
 
+    reelNextTickRef.current = Array.from({ length: reelCount }, () => 0)
     intervalRef.current = window.setInterval(() => {
-      setDisplayDigits((current) => current.map((digit, index) => (
-        index < lockedReelsRef.current ? digit : String(Math.floor(Math.random() * 10))
-      )))
-    }, 72)
+      const now = window.performance.now()
+
+      setDisplayDigits((current) => current.map((digit, index) => {
+        if (index < lockedReelsRef.current || now < reelNextTickRef.current[index]) return digit
+
+        const isSlowReel = index >= slowReelStart
+        reelNextTickRef.current[index] = now + (isSlowReel ? SLOW_REEL_SPIN_INTERVAL : REGULAR_REEL_SPIN_INTERVAL)
+        return String(Math.floor(Math.random() * 10))
+      }))
+    }, REGULAR_REEL_SPIN_INTERVAL)
 
     stopTimersRef.current = targetDigits.map((target, index) => window.setTimeout(() => {
       lockedReelsRef.current = index + 1
@@ -96,7 +111,9 @@ export default function RaffleDraw() {
         setWinner(selectedWinner)
         setIsSpinning(false)
       }
-    }, 1100 + index * 175))
+    }, ROLL_START_DELAY
+      + Math.min(index, slowReelStart) * REGULAR_REEL_STOP_INTERVAL
+      + Math.max(0, index - slowReelStart) * SLOW_REEL_STOP_INTERVAL))
   }
 
   function openEntryList() {
@@ -123,10 +140,11 @@ export default function RaffleDraw() {
           {Array.from({ length: reelCount }, (_, index) => {
             const digit = visibleDigits[index] ?? "0"
             const isLocked = isSpinning && index < lockedReels
+            const isSlowReel = index >= slowReelStart
 
             return (
               <div
-                className={`digit-reel${isSpinning && !isLocked ? " is-rolling" : ""}${digit.trim() ? "" : " is-empty"}`}
+                className={`digit-reel${isSpinning && !isLocked ? " is-rolling" : ""}${isSpinning && !isLocked && isSlowReel ? " is-slow" : ""}${digit.trim() ? "" : " is-empty"}`}
                 key={index}
                 aria-hidden="true"
               >
