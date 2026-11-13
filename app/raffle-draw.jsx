@@ -2,6 +2,14 @@
 
 import { useEffect, useRef, useState } from "react"
 
+const ROLL_START_DELAY = 1100
+const REEL_FRAME_INTERVAL = 32
+const DIGIT_STRIP_LENGTH = 100
+const REGULAR_REEL_SPIN_INTERVAL = 72
+const SLOW_REEL_SPIN_INTERVAL = 240
+const REGULAR_REEL_STOP_INTERVAL = 175
+const SLOW_REEL_STOP_INTERVAL = 480
+
 const sampleEntries = [
   "024 000 0001",
   "024 000 0002",
@@ -42,29 +50,36 @@ function pickSecureIndex(length) {
 
 export default function RaffleDraw() {
   const [list, setList] = useState(sampleEntries.join("\n"))
-  const [displayDigits, setDisplayDigits] = useState([])
+  const [reelPositions, setReelPositions] = useState([])
   const [lockedReels, setLockedReels] = useState(0)
   const [isSpinning, setIsSpinning] = useState(false)
+  const [isSlowdown, setIsSlowdown] = useState(false)
   const [winner, setWinner] = useState(null)
   const intervalRef = useRef(null)
+  const slowdownTimerRef = useRef(null)
   const stopTimersRef = useRef([])
   const lockedReelsRef = useRef(0)
+  const reelNextTickRef = useRef([])
+  const reelPositionsRef = useRef([])
+  const slowdownActiveRef = useRef(false)
   const dialogRef = useRef(null)
   const entries = parseEntries(list)
   const reelCount = Math.max(1, ...entries.map(({ digits }) => digits.length))
-  const visibleDigits = isSpinning || winner
-    ? displayDigits
-    : Array.from({ length: reelCount }, () => "0")
-
+  const slowReelStart = Math.max(0, reelCount - 4)
   useEffect(() => () => {
     window.clearInterval(intervalRef.current)
+    window.clearTimeout(slowdownTimerRef.current)
     stopTimersRef.current.forEach(window.clearTimeout)
   }, [])
 
   function handleListChange(event) {
     setList(event.target.value)
     setWinner(null)
-    setDisplayDigits([])
+    setReelPositions([])
+    reelPositionsRef.current = []
+    setLockedReels(0)
+    setIsSlowdown(false)
+    slowdownActiveRef.current = false
   }
 
   function beginDraw() {
@@ -72,32 +87,74 @@ export default function RaffleDraw() {
 
     const selectedWinner = entries[pickSecureIndex(entries.length)]
     const targetDigits = selectedWinner.digits.padStart(reelCount, " ").split("")
+    const startPositions = Array.from({ length: reelCount }, (_, index) => (
+      20 + ((reelPositionsRef.current[index] ?? 0) % 10)
+    ))
+    const spinStartedAt = window.performance.now()
+
+    window.clearInterval(intervalRef.current)
+    window.clearTimeout(slowdownTimerRef.current)
     lockedReelsRef.current = 0
+    reelPositionsRef.current = startPositions
+    reelNextTickRef.current = Array.from({ length: reelCount }, () => spinStartedAt)
+    slowdownActiveRef.current = false
     setLockedReels(0)
+    setReelPositions(startPositions)
     setWinner(null)
-    setDisplayDigits(Array.from({ length: reelCount }, () => String(Math.floor(Math.random() * 10))))
+    setIsSlowdown(false)
     setIsSpinning(true)
 
+    slowdownTimerRef.current = window.setTimeout(() => {
+      slowdownActiveRef.current = true
+      setIsSlowdown(true)
+    }, ROLL_START_DELAY)
+
     intervalRef.current = window.setInterval(() => {
-      setDisplayDigits((current) => current.map((digit, index) => (
-        index < lockedReelsRef.current ? digit : String(Math.floor(Math.random() * 10))
-      )))
-    }, 72)
+      const now = window.performance.now()
+      const nextPositions = reelPositionsRef.current.slice()
+      let hasMoved = false
+
+      for (let index = 0; index < reelCount; index += 1) {
+        if (index < lockedReelsRef.current || now < reelNextTickRef.current[index]) continue
+
+        const isSlowReel = index >= slowReelStart && slowdownActiveRef.current
+        reelNextTickRef.current[index] = now + (
+          isSlowReel ? SLOW_REEL_SPIN_INTERVAL : REGULAR_REEL_SPIN_INTERVAL
+        )
+        nextPositions[index] += 1
+        hasMoved = true
+      }
+
+      if (hasMoved) {
+        reelPositionsRef.current = nextPositions
+        setReelPositions(nextPositions)
+      }
+    }, REEL_FRAME_INTERVAL)
 
     stopTimersRef.current = targetDigits.map((target, index) => window.setTimeout(() => {
+      const currentPosition = reelPositionsRef.current[index] ?? 0
+      const targetDigit = Number(target)
+      const digitOffset = (targetDigit - (currentPosition % 10) + 10) % 10
+      const nextPositions = reelPositionsRef.current.slice()
+      nextPositions[index] = currentPosition + (digitOffset || 10)
+      reelPositionsRef.current = nextPositions
       lockedReelsRef.current = index + 1
       setLockedReels(index + 1)
-      setDisplayDigits((current) => current.map((digit, reelIndex) => (
-        reelIndex === index ? target : digit
-      )))
+      setReelPositions(nextPositions)
 
       if (index === targetDigits.length - 1) {
         window.clearInterval(intervalRef.current)
+        window.clearTimeout(slowdownTimerRef.current)
+        slowdownActiveRef.current = true
+        setIsSlowdown(true)
         setWinner(selectedWinner)
         setIsSpinning(false)
       }
-    }, 1100 + index * 175))
+    }, ROLL_START_DELAY
+      + Math.min(index, slowReelStart) * REGULAR_REEL_STOP_INTERVAL
+      + Math.max(0, index - slowReelStart) * SLOW_REEL_STOP_INTERVAL))
   }
+
 
   function openEntryList() {
     dialogRef.current?.showModal()
@@ -121,16 +178,24 @@ export default function RaffleDraw() {
           aria-live="off"
         >
           {Array.from({ length: reelCount }, (_, index) => {
-            const digit = visibleDigits[index] ?? "0"
+            const stripPosition = reelPositions[index] ?? 0
             const isLocked = isSpinning && index < lockedReels
+            const isSlowReel = index >= slowReelStart
 
             return (
               <div
-                className={`digit-reel${isSpinning && !isLocked ? " is-rolling" : ""}${digit.trim() ? "" : " is-empty"}`}
+                className={`digit-reel${isSpinning && !isLocked ? " is-rolling" : ""}${isSlowdown && isSlowReel ? " is-slow" : ""}`}
                 key={index}
                 aria-hidden="true"
               >
-                <span className="digit-value">{digit}</span>
+                <div
+                  className="digit-strip"
+                  style={{ "--strip-offset": `${-stripPosition}%` }}
+                >
+                  {Array.from({ length: DIGIT_STRIP_LENGTH }, (_, digitIndex) => (
+                    <span key={digitIndex}>{digitIndex % 10}</span>
+                  ))}
+                </div>
               </div>
             )
           })}
